@@ -1,0 +1,13 @@
+# Compiled source
+*.pyc
+*.pyo
+
+# Backups and logs
+*.save*
+*.bak
+*.log
+
+
+# OS generated files
+.DS_STORE
+.catkin_workspace
