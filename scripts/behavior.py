@@ -39,11 +39,13 @@ class behavior():
         self.pub_pulse_x = rospy.Publisher('Pulse_x',Int32MultiArray, queue_size=10) 
         self.pub_pulse_y = rospy.Publisher('Pulse_y',Int32MultiArray, queue_size=10)
         self.pub_pulse_z = rospy.Publisher('Pulse_z',Int32MultiArray, queue_size=10)               
-        
+        self.pub_platform_init = rospy.Publisher('platform_init',Int32,queue_size=10)        
+
         # ROS subscriptions 
         self.subscriber = rospy.Subscriber('New_pos',Float32MultiArray, self.callback_pos)
         self.subscriber = rospy.Subscriber('Motor_Kill',String, self.callback_kill)
-        
+        self.subscriber = rospy.Subscriber('Error',String,self.callback_error)        
+
         # ROS init
         self.rate = rospy.Rate(10) # 10Hz
 
@@ -53,6 +55,11 @@ class behavior():
         self.new_pos_y = data.data[1]
         self.new_pos_z = data.data[2]
         self.behavior_output_pulse()
+
+    # Error management
+    def callback_error(self,data):
+        # switch on error code 
+        self.pub_platform_init.publish(1)
 
     # Compute and publish the number of pulse for each axes
     def behavior_ouptut__pulse(self):
@@ -67,6 +74,32 @@ class behavior():
         self.pulse_x = int(round(pulse_temp_x))
         self.pulse_y = int(round(pulse_temp_y))
         self.pulse_z = int(round(pulse_temp_z))
+
+        # Adjust values if error is greater than 1 pulse
+        self.err_pulse_x += pulse_temp_x - self.pulse_x
+        self.err_pulse_y += pulse_temp_y - self.pulse_y
+        self.err_pulse_z += pulse_temp_z - self.pulse_z
+
+        if self.err_pulse_x < -1 :
+            self.err_pulse_x += 1
+            self.pulse_x -= 1 
+        elif self.err_pulse_x > 1 :
+            self.err_pulse_x -= 1
+            self.pulse_x += 1
+
+        if self.err_pulse_y < -1 :
+            self.err_pulse_y += 1
+            self.pulse_y -= 1
+        elif self.err_pulse_y > 1 :
+            self.err_pulse_y -= 1
+            self.pulse_y += 1
+
+        if self.err_pulse_z < -1 :
+            self.err_pulse_z += 1
+            self.pulse_z -= 1
+        elif self.err_pulse_z > 1 :
+            self.err_pulse_z -= 1
+            self.pulse_z += 1
 
         self.pub_pulse_x.publish(self.pulse_x)
         self.pub_pulse_y.publish(self.pulse_y)
@@ -91,3 +124,4 @@ if __name__ == '__main__':
 
     except rospy.ROSInterruptException as e:
         print(e)
+
