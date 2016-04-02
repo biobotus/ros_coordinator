@@ -15,17 +15,19 @@ class Behavior():
         self.rate = rospy.Rate(10)  # 10Hz
 
         # ROS subscriptions
-        self.subscriber = rospy.Subscriber('New_Step', Float32MultiArray, self.callback_pos)
-        self.subscriber = rospy.Subscriber('New_Step_Step', Int32MultiArray, self.callback_pos_step)    # Pour test
+        self.subscriber = rospy.Subscriber('New_Step', Float32MultiArray, \
+                                           self.callback_pos)
+        self.subscriber = rospy.Subscriber('New_Step_Step', Int32MultiArray, \
+                                           self.callback_pos_step)    # Pour test
         self.subscriber = rospy.Subscriber('Error', String, self.callback_error)
         #self.subscriber = rospy.Subscriber('Done_Move',String,self.callback_done_move)
 
         # ROS publishments
-        self.pub_platform_init = rospy.Publisher('Platform_Init', Bool, queue_size=10)
-        self.pub_pulse_XY = rospy.Publisher('Pulse_XY', IntList, queue_size=10)
         self.motor_kill = rospy.Publisher('Motor_Kill', String, queue_size=10)
-        self.pub_pulse_Z = rospy.Publisher('Pulse_Z', IntList, queue_size=10)
-        self.step_state = rospy.Publisher('Step_State', Bool, queue_size=10)
+        self.platform_init = rospy.Publisher('Platform_Init', Bool, queue_size=10)
+        self.pub_pulse_xy = rospy.Publisher('Pulse_XY', IntList, queue_size=10)
+        self.pub_pulse_z = rospy.Publisher('Pulse_Z', IntList, queue_size=10)
+        self.step_state = rospy.Publisher('Step_Done', Bool, queue_size=10)
 
 
         self.delta_x = 0
@@ -87,12 +89,12 @@ class Behavior():
         pulse_XY = IntList()
         pulse_XY.data = [step_x, step_y]
         print(pulse_XY.data)
-        self.pub_pulse_XY.publish(pulse_XY)
+        self.pub_pulse_xy.publish(pulse_XY)
 
 
     # Error management
     def callback_error(self,data):
-        self.pub_platform_init.publish(True)
+        self.platform_init.publish(True)
 
     # Compute and publish the number of pulse for each axes
     def behavior_output_pulse(self):
@@ -161,7 +163,7 @@ class Behavior():
         pulse_XY = IntList()
         pulse_XY.data = [self.pulse_x, self.pulse_y]
         print(pulse_XY.data)
-        self.pub_pulse_XY.publish(pulse_XY)
+        self.pub_pulse_xy.publish(pulse_XY)
 
         if (self.pulse_simplepip):
             self.z_id = 0
@@ -171,17 +173,17 @@ class Behavior():
             self.z_id = 2
 
        # z_tools = IntList()
-       # z_tools.data = [self.pulse_simplepip,self.pulse_multipip,self.pulse_gripper]
-       # Pulse_Z = [self.z_id,z_tools.data]
-       # self.pub_pulse_Z.publish(Pulse_Z)
+       # z_tools.data = [self.pulse_simplepip, self.pulse_multipip, self.pulse_gripper]
+       # Pulse_Z = [self.z_id, z_tools.data]
+       # self.pub_pulse_z.publish(Pulse_Z)
 
 
     def listener(self):
         # rospy.spin()
         try:
             while True:
-                a = raw_input("Init platform? CTRL+D to quit\n")
-                self.pub_platform_init.publish(True)
+                a = raw_input("Pres enter to init platform / CTRL+D to quit\n")
+                self.platform_init.publish(True)
                 print("Published init...")
         except EOFError:
             return
