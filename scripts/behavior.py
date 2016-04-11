@@ -85,6 +85,7 @@ class Behavior():
         # Others
         self.step_dict = {}
         self.done_module = []
+        self.z_id = -1
 
     # Callback position
     def callback_new_step(self, data):
@@ -148,8 +149,9 @@ class Behavior():
         except AssertionError:
             print("Error : wrong done_move received: {}".format(data.data))
             return None
-
+        
         self.done_module.remove(data.data)
+        
         print("Il reste {} dans done_move".format(self.done_module))
         if not self.done_module:
             self.actual_pos_x = self.new_pos_x
@@ -170,7 +172,8 @@ class Behavior():
     # Publish pipette_s topics in function of self.step_dict args
     def send_pipette_s(self):
         if self.step_dict['params']['name'] == 'pos':
-            return self.send_pos(0)
+            self.z_id = 0
+            return self.send_pos()
 
         try:
             assert self.step_dict['params']['name'] == 'manip'
@@ -211,7 +214,8 @@ class Behavior():
     # Publish pipette_mp topics in function of self.step_dict args
     def send_pipette_mp(self):
         if self.step_dict['params']['name'] == 'pos':
-            return self.send_pos(1)
+            self.z_id = 1
+            return self.send_pos()
 
         try:
             assert self.step_dict['params']['name'] == 'manip'
@@ -253,7 +257,8 @@ class Behavior():
     # Publish gripper topics in function of self.step_dict args
     def send_gripper(self):
         if self.step_dict['params']['name'] == 'pos':
-            return self.send_pos(2)
+            self.z_id = 2
+            return self.send_pos()
 
         try:
             assert self.step_dict['params']['name'] == 'manip'
@@ -268,7 +273,7 @@ class Behavior():
 
 
     # Compute and publish the number of pulse for each axes
-    def send_pos(self, z_id):
+    def send_pos(self):
         try:
             assert isinstance(self.step_dict['params']['args']['x'], numbers.Real)
             assert isinstance(self.step_dict['params']['args']['y'], numbers.Real)
@@ -280,24 +285,25 @@ class Behavior():
 
         self.new_pos_x = self.step_dict['params']['args']['x']
         self.new_pos_y = self.step_dict['params']['args']['y']
-        self.new_pos_z[z_id] = self.step_dict['params']['args']['z']
+        self.new_pos_z[self.z_id] = self.step_dict['params']['args']['z']
+        
         self.delta_x = self.new_pos_x - self.actual_pos_x
         self.delta_y = self.new_pos_y - self.actual_pos_y
-        self.delta_z[z_id] = self.new_pos_z[z_id] - self.actual_pos_z[z_id]
+        self.delta_z[self.z_id] = self.new_pos_z[self.z_id] - self.actual_pos_z[self.z_id]
 
         pulse_temp_x = self.delta_x / self.pulse_cst_xy
         pulse_temp_y = self.delta_y / self.pulse_cst_xy
-        pulse_temp_z = self.delta_z[z_id] / self.pulse_cst_z
+        pulse_temp_z = self.delta_z[self.z_id] / self.pulse_cst_z
+        
         self.pulse_x = int(round(pulse_temp_x))
         self.pulse_y = int(round(pulse_temp_y))
-        self.pulse_z[z_id] = int(round(pulse_temp_z))
+        self.pulse_z[self.z_id] = int(round(pulse_temp_z))
 
 
         # Adjust values if error is greater than 1 pulse
         self.err_pulse_x += pulse_temp_x - self.pulse_x
         self.err_pulse_y += pulse_temp_y - self.pulse_y
-        self.err_pulse_z[z_id] += pulse_temp_z - self.pulse_z[z_id]
-
+        self.err_pulse_z[self.z_id] += pulse_temp_z - self.pulse_z[self.z_id]
 
         if self.err_pulse_x < -1:
             self.err_pulse_x += 1
@@ -312,30 +318,35 @@ class Behavior():
         elif self.err_pulse_y > 1 :
             self.err_pulse_y -= 1
             self.pulse_y += 1
+            
+        if self.err_pulse_z[self.z_id] < -1:
+            self.err_pulse_z[self.z_id] += 1
+            self.pulse_z[self.z_id] -= 1
+        elif self.err_pulse_z[self.z_id] > 1:
+            self.err_pulse_z[self.z_id] -= 1
+            self.pulse_z[self.z_id] += 1
 
-        if self.err_pulse_z[z_id] < -1:
-            self.err_pulse_z[z_id] += 1
-            self.pulse_z[z_id] -= 1
-        elif self.err_pulse_z[z_id] > 1:
-            self.err_pulse_z[z_id] -= 1
-            self.pulse_z[z_id] += 1
-
+        
+        if self.pulse_x != 0 or self.pulse_y != 0:
+            self.done_module.append('MotorControlXY')
+        if self.pulse_z[self.z_id] != 0:
+            print(self.pulse_z)
+            self.done_module.append('MotorControlZ')
+        
         #Publish number of pulse for all axis
         if self.pulse_x != 0 or self.pulse_y != 0:
             print("pulse_xy: {}".format([self.pulse_x, self.pulse_y]))
             pulse_XY = IntList()
             pulse_XY.data = [self.pulse_x, self.pulse_y]
             self.pub_pulse_xy.publish(pulse_XY)
-            self.done_module.append('MotorControlXY')
-
-        if self.pulse_z[0] != 0 or self.pulse_z[1] != 0 or self.pulse_z[2] != 0:
-            print("z_id: {}, pulze_z: {}".format(z_id, self.pulse_z[z_id]))
+                        
+        if self.pulse_z != 0:
+            while 'MotorControlXY' in self.done_module:
+                self.rate.sleep()
             z_tools = IntList()
-            Pulse_Z = [z_id, self.pulse_z[z_id]]
+            Pulse_Z = [self.z_id, self.pulse_z[self.z_id]]
             self.pub_pulse_z.publish(Pulse_Z)
-            self.done_module.append('MotorControlZ')
-
-
+        
     def listener(self):
         rospy.spin()
 

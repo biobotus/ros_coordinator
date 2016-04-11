@@ -2,14 +2,15 @@
 
 Behavior is management ROS node used to link the planner
 to platform_control's nodes. Behavior is the manager of the
-cells in general, it translate and divide planner's tasks
+cells in general, it translate and divide planner's tasks 
+to the right platform_control's node for a specific task.
 
 
 It received these ROS topics:
 
-    -**New_Step, received from planner**
-    -**Done_Module, received from all platform_control's nodes**
-    -**Error, received from all plaform_control's nodes**
+    -New_Step, received from planner
+    -Done_Module, received from all platform_control's nodes
+    -Error, received from all plaform_control's nodes
 
 The information reveived from planner is a python dictionnary
 ROS topics that behavior manage and redistribute the informations
@@ -33,14 +34,14 @@ initialization or to a total stop of the entire cells for
 example.
 
 Behavior publish these topics :
-    -**Motor_Kill**
-    -**Platform_Init**
-    -**Pulse_XY**
-    -**Pulse_Z**
-    -**Pulse_SP**
-    -**Pulse_MP**
-    -**Gripper_Pos**
-    -**Step_Done**
+    -Motor_Kill
+    -Platform_Init
+    -Pulse_XY
+    -Pulse_Z
+    -Pulse_SP
+    -Pulse_MP
+    -Gripper_Pos
+    -Step_Done
 
 Motor_Kill is sended to stop motor movement of the desire axis.
 
