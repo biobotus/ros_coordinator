@@ -32,10 +32,11 @@ class Behavior():
         self.pub_pulse_xy = rospy.Publisher('Pulse_XY', IntList, queue_size=10)
         self.pub_pulse_z = rospy.Publisher('Pulse_Z', IntList, queue_size=10)
         self.pub_pulse_sp = rospy.Publisher('Pulse_SP', IntList, queue_size=10)
+        self.pub_pulse_mp = rospy.Publisher('Pulse_MP', IntList, queue_size=10)
         self.pub_gripper_pos = rospy.Publisher('Gripper_Pos', String, queue_size=10)
         self.step_done = rospy.Publisher('Step_Done', Bool, queue_size=10)
         self.init_done = rospy.Publisher('Init_Done', Bool, queue_size=10)
-        
+
         #Robot position inits
         self.delta_x = 0
         self.delta_y = 0
@@ -88,12 +89,12 @@ class Behavior():
         self.done_module = []
         self.z_id = -1
         self.valid_motor_names = ['MotorControlXY', 'MotorControlZ']
-        
+
     # Callback position
     def callback_new_step(self, data):
         while self.done_module:
             self.rate.sleep()
-    
+
         try:
             self.step_dict = ast.literal_eval(data.data)
             assert type(self.step_dict) == dict
@@ -153,7 +154,7 @@ class Behavior():
         except ValueError:
             print("Error : wrong done_move received: {}".format(data.data))
             return None
-        
+
         if not self.done_module:
             self.actual_pos_x = self.new_pos_x
             self.actual_pos_y = self.new_pos_y
@@ -162,7 +163,7 @@ class Behavior():
             self.actual_pos_mp = self.pulse_mp + self.actual_pos_mp
             self.pulse_mp = 0
             self.pulse_sp = 0
-            
+
             if self.step_dict['module_type'] == 'init':
                 print("Publishing init done")
                 self.actual_pos_x = 0
@@ -185,65 +186,74 @@ class Behavior():
         except (AssertionError, AttributeError) as e:
             print("Error : {}".format(e))
             return None
-    
-    # send platform_init 
+
+    # send platform_init
     def send_init(self):
         try:
             assert type(self.step_dict['params']) == list
-        
+
         except (AssertionError):
             print('Invalid params type for init : {}'.format(self.step_dict))
             return None
 
         for axis in self.step_dict['params']:
             if axis in self.valid_motor_names:
-                self.done_module.append(axis)
-                self.platform_init.publish(axis)
-                
+                if 'MotorControlZ' in self.step_dict['params']:
+                    self.done_module.append('MotorControlZ')
+                    self.platform_init.publish('MotorControlZ')
+                    self.step_dict['params'].remove('MotorControlZ')
+
+                if axis :
+                    while 'MotorControlZ' in self.done_module:
+                        self.rate.sleep()
+
+                    self.done_module.append(axis)
+                    self.platform_init.publish(axis)
+
         print("init : {}".format(self.done_module))
-            
+
     # Publish pipette_s topics in function of self.step_dict args
     def send_pipette_s(self):
         if self.step_dict['params']['name'] == 'pos':
             self.z_id = 0
             return self.send_pos()
 
-        try:
-            assert self.step_dict['params']['name'] == 'manip'
+        elif self.step_dict['params']['name'] == 'manip':
+            vol = self.step_dict['params']['args']['vol']
+            
+            print('actual pos ', self.actual_pos_sp)
+            #linear empiric relations
+            if abs(vol) < 10 :
+                self.pulse_sp = int(round(self.pip_slope_tip20*abs(vol) + self.pip_intercept_tip20))
+            elif (abs(vol) >= 10) and (abs(vol) < 100):
+                self.pulse_sp = int(round(self.pip_slope_tip200*abs(vol) + self.pip_intercept_tip200))
+            elif (abs(vol) >= 100) and (abs(vol) < 800):
+                self.pulse_sp = int(round(self.pip_slope_tip1000*abs(vol) + self.pip_intercept_tip1000))
+            else :
+                print("Error wrong volume entered")
+                return None
 
-        except (AssertionError, AtributeError) as e:
-            print("Error with params name in dict: {}".format(e))
-            return None
+            if vol < 0:
+                self.pulse_sp *= -1
+            '''    
+            try :
+                assert (self.pulse_sp + self.actual_pos_sp) < self.pip_lim
+                assert (self.pulse_sp + self.actual_pos_sp) > 0
 
-        vol = self.step_dict['params']['args']['vol']
-
-        #linear empiric relations
-        if abs(vol) < 10 :
-            self.pulse_sp = int(round(self.pip_slope_tip20*vol + self.pip_intercept_tip20))
-        elif (abs(vol) >= 10) and (abs(vol) < 100):
-            self.pulse_sp = int(round(self.pip_slope_tip200*vol + self.pip_intercept_tip200))
-        elif (abs(vol) > 100) and (abs(vol) < 800):
-            self.pulse_sp = int(round(self.pip_slope_tip1000*vol + self.pip_intercept_tip1000))
-        else :
-            print("Error wrong volume entered")
-            return None
-
-        try :
-            assert (self.pulse_sp + self.actual_pos_sp) < self.pip_lim
-            assert (self.pulse_sp + self.actual_pos_sp) > 0
-
-        except AssertionError:
-            print("Impossible SP manip, volume out of range: {}".format(vol))
-            return None
-
-        freq_sp = int(round((self.step_dict['params']['args']['speed'] * self.pulse_sp) / vol))
-
-        #Publish number of pulse for simple pip
-        pulse_SP = IntList()
-        pulse_SP.data = [freq_sp, self.pulse_sp]
-        print("pulse_sp : {}".format(pulse_SP.data))
-        self.pub_pulse_sp.publish(pulse_SP)
-        self.done_module.append('MotorControlSP')
+            except AssertionError:
+                print("Impossible SP manip, volume out of range: {}".format(vol))
+                return None
+            '''
+            freq_sp = int(round(self.step_dict['params']['args']['speed'] * abs(self.pulse_sp / vol)))
+            
+            
+            
+            #Publish number of pulse for simple pip
+            pulse_SP = IntList()
+            pulse_SP.data = [freq_sp, self.pulse_sp]
+            print("pulse_sp : {}".format(pulse_SP.data))
+            self.pub_pulse_sp.publish(pulse_SP)
+            self.done_module.append('MotorControlSP')
 
     # Publish pipette_mp topics in function of self.step_dict args
     def send_pipette_mp(self):
@@ -262,15 +272,18 @@ class Behavior():
         vol = self.step_dict['params']['args']['vol']
 
         if abs(vol) < 10 :
-            self.pulse_mp = int(round(self.pip_slope_tip20*vol + self.pip_intercept_tip20))
+            self.pulse_mp = int(round(self.pip_slope_tip20*abs(vol) + self.pip_intercept_tip20))
         elif (abs(vol) >= 10) and (abs(vol) < 100):
-            self.pulse_mp = int(round(self.pip_slope_tip200*vol + self.pip_intercept_tip200))
-        elif (abs(vol) > 100) and (abs(vol) < 800):
-            self.pulse_mp = int(round(self.pip_slope_tip1000*vol + self.pip_intercept_tip1000))
+            self.pulse_mp = int(round(self.pip_slope_tip200*abs(vol) + self.pip_intercept_tip200))
+        elif (abs(vol) > 100) and (abs(vol) < 600):
+            self.pulse_mp = int(round(self.pip_slope_tip1000*abs(vol) + self.pip_intercept_tip1000))
         else :
             print("Error wrong volume entered")
             return None
 
+        if vol < 0:
+            self.pulse_sp *= -1
+            
         try :
             assert (self.pulse_mp + self.actual_pos_mp) < self.pip_lim
             assert (self.pulse_mp + self.actual_pos_mp) > 0
@@ -278,8 +291,8 @@ class Behavior():
         except (AssertionError) as e:
             print("Impossible MP manip, volume out of range: {}".format(e))
             return None
-
-        freq_mp = int(round((self.step_dict['params']['args']['speed'] * self.pulse_mp) / vol))
+                
+        freq_mp = int(round((self.step_dict['params']['args']['speed'] * self.pulse_mp) / abs(vol)))
         self.pulse_mp = round(self.pulse_mp)
         #Publish number of pulse for simple pip
         pulse_MP = IntList()
@@ -308,7 +321,7 @@ class Behavior():
 
     # Compute and publish the number of pulse for each axes
     def send_pos(self):
-    
+
         try:
             assert isinstance(self.step_dict['params']['args']['x'], numbers.Real)
             assert isinstance(self.step_dict['params']['args']['y'], numbers.Real)
@@ -321,7 +334,7 @@ class Behavior():
         self.new_pos_x = self.step_dict['params']['args']['x']
         self.new_pos_y = self.step_dict['params']['args']['y']
         self.new_pos_z[self.z_id] = self.step_dict['params']['args']['z']
-        
+
         self.delta_x = self.new_pos_x - self.actual_pos_x
         self.delta_y = self.new_pos_y - self.actual_pos_y
         self.delta_z[self.z_id] = self.new_pos_z[self.z_id] - self.actual_pos_z[self.z_id]
@@ -329,7 +342,7 @@ class Behavior():
         pulse_temp_x = self.delta_x / self.pulse_cst_xy
         pulse_temp_y = self.delta_y / self.pulse_cst_xy
         pulse_temp_z = self.delta_z[self.z_id] / self.pulse_cst_z
-        
+
         self.pulse_x = int(round(pulse_temp_x))
         self.pulse_y = int(round(pulse_temp_y))
         self.pulse_z[self.z_id] = int(round(pulse_temp_z))
@@ -353,7 +366,7 @@ class Behavior():
         elif self.err_pulse_y > 1 :
             self.err_pulse_y -= 1
             self.pulse_y += 1
-            
+
         if self.err_pulse_z[self.z_id] < -1:
             self.err_pulse_z[self.z_id] += 1
             self.pulse_z[self.z_id] -= 1
@@ -361,33 +374,33 @@ class Behavior():
             self.err_pulse_z[self.z_id] -= 1
             self.pulse_z[self.z_id] += 1
 
-        
+
         if self.pulse_x != 0 or self.pulse_y != 0:
             self.done_module.append('MotorControlXY')
         if self.pulse_z[self.z_id] != 0:
             print(self.pulse_z)
             self.done_module.append('MotorControlZ')
-        
+
         #Publish number of pulse for all axis
         if self.pulse_x != 0 or self.pulse_y != 0:
             print("pulse_xy: {}".format([self.pulse_x, self.pulse_y]))
             pulse_XY = IntList()
             pulse_XY.data = [self.pulse_x, self.pulse_y]
             self.pub_pulse_xy.publish(pulse_XY)
-                        
+
         if self.pulse_z != 0:
             while 'MotorControlXY' in self.done_module:
                 self.rate.sleep()
             z_tools = IntList()
             Pulse_Z = [self.z_id, self.pulse_z[self.z_id]]
             self.pub_pulse_z.publish(Pulse_Z)
-    
+
     def motor_kill(self, axis):
         self.motor_kill.publish(axis)
-    
+
     def platform_init(self, axis):
         self.platform_init.publish(axis)
-        
+
     def listener(self):
         rospy.spin()
 

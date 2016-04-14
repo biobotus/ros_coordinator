@@ -45,7 +45,8 @@ Behavior publish these topics :
 
 Motor_Kill is sended to stop motor movement of the desire axis.
 
-Platform_Init is sended for the homing.
+Platform_Init is sended for the homing, it is a string that contains
+the names of the nodes that has to be initiated.
 
 Pulse_XY is a intList that contains the number of pulse sended to
 X and Y axis motors, sames for Pulse_Z but this one also contains
