@@ -6,7 +6,7 @@ from ErrorCode import error_code
 from biobot_ros_msgs.msg import IntList
 import rospy
 import numbers
-from std_msgs.msg import Float32MultiArray, Int32MultiArray, Float32, String, Int32, Bool
+from std_msgs.msg import Bool, String
 
 
 class Behavior():
@@ -21,8 +21,6 @@ class Behavior():
                                            self.callback_new_step_abs)
         self.subscriber = rospy.Subscriber('New_Step_Rel', String, \
                                            self.callback_new_step_rel)
-        self.subscriber = rospy.Subscriber('New_Step_XY', Int32MultiArray, self.callback_XY_step)
-        self.subscriber = rospy.Subscriber('New_Step_Z', Int32MultiArray, self.callback_Z_step)
         self.subscriber = rospy.Subscriber('Error', String, self.callback_error)
         self.subscriber = rospy.Subscriber('Done_Module', String,self.callback_done_module)
 
@@ -35,7 +33,6 @@ class Behavior():
         self.pub_pulse_mp = rospy.Publisher('Pulse_MP', IntList, queue_size=10)
         self.pub_gripper_pos = rospy.Publisher('Gripper_Pos', String, queue_size=10)
         self.step_done = rospy.Publisher('Step_Done', Bool, queue_size=10)
-        self.init_done = rospy.Publisher('Init_Done', Bool, queue_size=10)
 
         #Robot position inits
         self.delta_x = 0
@@ -118,57 +115,30 @@ class Behavior():
             print("Error : {}".format(e))
             return None
 
-    # TEMPORARY - TODO : REMOVE SOON
-    # Callback position for step
-    def callback_XY_step(self,data):
-        step_x = data.data[0]
-        step_y = data.data[1]
-
-        #Publish number of pulse for all axis
-        pulse_XY = IntList()
-        pulse_XY.data = [step_x, step_y]
-        print(pulse_XY.data)
-
-        self.pub_pulse_xy.publish(pulse_XY)
-
-    # TEMPORARY - TODO : REMOVE SOON
-    # Callback position for step
-    def callback_Z_step(self,data):
-        z_id_test = data.data[0]
-        step_z = data.data[1]
-
-        pulse_Z = IntList()
-        pulse_Z.data = [z_id_test, step_z]
-        print(pulse_Z.data)
-
-        self.pub_pulse_z.publish(pulse_Z)
-
     def callback_done_module(self, data):
         try:
             self.done_module.remove(data.data)
 
         except ValueError:
-            print("Error : wrong done_move received: {}".format(data.data))
+            print("Error : wrong done_module received: {}".format(data.data))
             return None
 
         if not self.done_module:
-            self.actual_pos_x = self.new_pos_x
-            self.actual_pos_y = self.new_pos_y
-            self.actual_pos_z = self.new_pos_z[:]  # [:] important to clone the list
-            self.actual_pos_sp = self.pulse_sp + self.actual_pos_sp
-            self.actual_pos_mp = self.pulse_mp + self.actual_pos_mp
-            self.pulse_mp = 0
-            self.pulse_sp = 0
-
             if self.step_dict['module_type'] == 'init':
-                print("Publishing init done")
                 self.actual_pos_x = 0
                 self.actual_pos_y = 0
                 self.actual_pos_z = [0, 0, 0]
-                self.step_done.publish(True)
             else:
-                print("Publishing step done")
-                self.step_done.publish(True)
+                self.actual_pos_x = self.new_pos_x
+                self.actual_pos_y = self.new_pos_y
+                self.actual_pos_z = self.new_pos_z[:]  # [:] important to clone the list
+                self.actual_pos_sp = self.pulse_sp + self.actual_pos_sp
+                self.actual_pos_mp = self.pulse_mp + self.actual_pos_mp
+                self.pulse_mp = 0  # TODO
+                self.pulse_sp = 0  # TODO
+
+            print("Publishing step done")
+            self.step_done.publish(True)
 
     # Error management
     def callback_error(self,data):
@@ -192,18 +162,23 @@ class Behavior():
             print('Invalid params type for init : {}'.format(self.step_dict))
             return None
 
+        print(self.step_dict['params'])
+
+        for axis in self.step_dict['params']:
+            if axis in self.valid_motor_names:
+                self.done_module.append(axis)
+
+        if 'MotorControlZ' in self.step_dict['params']:
+            print("init : {}".format('MotorControlZ'))
+            self.platform_init.publish('MotorControlZ')
+            self.step_dict['params'].remove('MotorControlZ')
+
+            while 'MotorControlZ' in self.done_module:
+                self.rate.sleep()
+
         for axis in self.step_dict['params']:
             if axis in self.valid_motor_names:
                 print("init : {}".format(axis))
-                if 'MotorControlZ' in self.step_dict['params']:
-                    self.done_module.append('MotorControlZ')
-                    self.platform_init.publish('MotorControlZ')
-                    self.step_dict['params'].remove('MotorControlZ')
-
-                while 'MotorControlZ' in self.done_module:
-                    self.rate.sleep()
-
-                self.done_module.append(axis)
                 self.platform_init.publish(axis)
 
 
@@ -392,10 +367,10 @@ class Behavior():
             pulse_Z.data = [self.z_id, self.pulse_z[self.z_id]]
             self.pub_pulse_z.publish(pulse_Z)
 
-    def motor_kill(self, axis):
+    def motor_kill_err(self, axis):
         self.motor_kill.publish(axis)
 
-    def platform_init(self, axis):
+    def platform_init_err(self, axis):
         self.platform_init.publish(axis)
 
     def listener(self):
