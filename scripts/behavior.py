@@ -3,7 +3,7 @@
 # imports
 import ast
 from ErrorCode import error_code
-from biobot_ros_msgs.msg import IntList
+from biobot_ros_msgs.msg import FloatList, IntList
 import rospy
 import numbers
 from std_msgs.msg import Bool, String
@@ -33,6 +33,7 @@ class Behavior():
         self.pub_pulse_mp = rospy.Publisher('Pulse_MP', IntList, queue_size=10)
         self.pub_gripper_pos = rospy.Publisher('Gripper_Pos', String, queue_size=10)
         self.step_done = rospy.Publisher('Step_Done', Bool, queue_size=10)
+        self.refresh_pos = rospy.Publisher('Refresh_Pos', FloatList, queue_size=10)
 
         #Robot position inits
         self.delta_x = 0
@@ -116,26 +117,41 @@ class Behavior():
             return None
 
     def callback_done_module(self, data):
-        try:
-            self.done_module.remove(data.data)
-
-        except ValueError:
+        print('done_module: {}'.format(data.data))
+        if data.data not in self.done_module:
             print("Error : wrong done_module received: {}".format(data.data))
             return None
 
+        self.done_module.remove(data.data)
+
         if not self.done_module:
             if self.step_dict['module_type'] == 'init':
-                self.actual_pos_x = 0
-                self.actual_pos_y = 0
-                self.actual_pos_z = [0, 0, 0]
+                # TODO: Only set position 0 to what was initialized
+                self.actual_pos_x = 0.0
+                self.actual_pos_y = 0.0
+                self.actual_pos_z = [0.0, 0.0, 0.0]
             else:
-                self.actual_pos_x = self.new_pos_x
-                self.actual_pos_y = self.new_pos_y
-                self.actual_pos_z = self.new_pos_z[:]  # [:] important to clone the list
-                self.actual_pos_sp = self.pulse_sp + self.actual_pos_sp
-                self.actual_pos_mp = self.pulse_mp + self.actual_pos_mp
-                self.pulse_mp = 0  # TODO
-                self.pulse_sp = 0  # TODO
+                if self.move_mode == 'abs':
+                    self.actual_pos_x = self.new_pos_x
+                    self.actual_pos_y = self.new_pos_y
+                    self.actual_pos_z[self.z_id] = self.new_pos_z[self.z_id]
+
+                elif self.move_mode == 'rel':
+                    self.actual_pos_x += self.new_pos_x
+                    self.actual_pos_y += self.new_pos_y
+                    self.actual_pos_z[self.z_id] += self.new_pos_z[self.z_id]
+
+                self.actual_pos_sp += self.pulse_sp
+                self.actual_pos_mp += self.pulse_mp
+                self.pulse_mp = 0
+                self.pulse_sp = 0
+
+            # Publish actual position for web interface
+            refresh = FloatList()
+            refresh.data = [self.actual_pos_x, self.actual_pos_y, \
+                            self.actual_pos_z[0], self.actual_pos_z[1], \
+                            self.actual_pos_z[2]]
+            self.refresh_pos.publish(refresh)
 
             print("Publishing step done")
             self.step_done.publish(True)
@@ -162,14 +178,11 @@ class Behavior():
             print('Invalid params type for init : {}'.format(self.step_dict))
             return None
 
-        print(self.step_dict['params'])
-
         for axis in self.step_dict['params']:
             if axis in self.valid_motor_names:
                 self.done_module.append(axis)
 
         if 'MotorControlZ' in self.step_dict['params']:
-            print("init : {}".format('MotorControlZ'))
             self.platform_init.publish('MotorControlZ')
             self.step_dict['params'].remove('MotorControlZ')
 
@@ -178,9 +191,7 @@ class Behavior():
 
         for axis in self.step_dict['params']:
             if axis in self.valid_motor_names:
-                print("init : {}".format(axis))
                 self.platform_init.publish(axis)
-
 
     # Publish pipette_s topics in function of self.step_dict args
     def send_pipette_s(self):
@@ -197,7 +208,7 @@ class Behavior():
                 self.pulse_sp = int(round(self.pip_slope_tip20*abs(vol) + self.pip_intercept_tip20))
             elif (abs(vol) >= 10) and (abs(vol) < 100):
                 self.pulse_sp = int(round(self.pip_slope_tip200*abs(vol) + self.pip_intercept_tip200))
-            elif (abs(vol) >= 100) and (abs(vol) < 800):
+            elif (abs(vol) >= 100) and (abs(vol) < 600):
                 self.pulse_sp = int(round(self.pip_slope_tip1000*abs(vol) + self.pip_intercept_tip1000))
             else :
                 print("Error wrong volume entered")
@@ -215,8 +226,6 @@ class Behavior():
                 return None
             '''
             freq_sp = int(round(self.step_dict['params']['args']['speed'] * abs(self.pulse_sp / vol)))
-
-
 
             #Publish number of pulse for simple pip
             pulse_SP = IntList()
@@ -240,7 +249,7 @@ class Behavior():
                 self.pulse_mp = int(round(self.pip_slope_tip20*abs(vol) + self.pip_intercept_tip20))
             elif (abs(vol) >= 10) and (abs(vol) < 100):
                 self.pulse_mp = int(round(self.pip_slope_tip200*abs(vol) + self.pip_intercept_tip200))
-            elif (abs(vol) >= 100) and (abs(vol) < 800):
+            elif (abs(vol) >= 100) and (abs(vol) < 600):
                 self.pulse_mp = int(round(self.pip_slope_tip1000*abs(vol) + self.pip_intercept_tip1000))
             else :
                 print("Error wrong volume entered")
@@ -365,6 +374,7 @@ class Behavior():
                 self.rate.sleep()
             pulse_Z = IntList()
             pulse_Z.data = [self.z_id, self.pulse_z[self.z_id]]
+            print("pulse_z{0}: {1}".format(self.z_id, self.pulse_z[self.z_id]))
             self.pub_pulse_z.publish(pulse_Z)
 
     def motor_kill_err(self, axis):
