@@ -34,6 +34,7 @@ class Behavior():
         self.pub_gripper_pos = rospy.Publisher('Gripper_Pos', String, queue_size=10)
         self.step_done = rospy.Publisher('Step_Done', Bool, queue_size=10)
         self.refresh_pos = rospy.Publisher('Refresh_Pos', FloatList, queue_size=10)
+        self.global_enable = rospy.Publisher('Global_Enable', Bool, queue_size=10)
 
         #Robot position inits
         self.delta_x = 0
@@ -88,6 +89,7 @@ class Behavior():
         self.z_id = -1
         self.valid_motor_names = ['MotorControlXY', 'MotorControlZ']
         self.move_mode = 'abs'
+        self.init_mod = None
 
     # Callback for new step
     def callback_new_step_abs(self, data):
@@ -126,10 +128,14 @@ class Behavior():
 
         if not self.done_module:
             if self.step_dict['module_type'] == 'init':
-                # TODO: Only set position 0 to what was initialized
-                self.actual_pos_x = 0.0
-                self.actual_pos_y = 0.0
-                self.actual_pos_z = [0.0, 0.0, 0.0]
+
+                if 'MotorControlXY' in self.init_mod :
+                    self.actual_pos_x = 0.0
+                    self.actual_pos_y = 0.0
+
+                if 'MotorControlZ' in self.init_mod :
+                    self.actual_pos_z = [0.0, 0.0, 0.0]
+
             else:
                 if self.move_mode == 'abs':
                     self.actual_pos_x = self.new_pos_x
@@ -171,12 +177,16 @@ class Behavior():
 
     # send platform_init
     def send_init(self):
+        print("Send Init")
+
         try:
             assert type(self.step_dict['params']) == list
 
         except (AssertionError):
             print('Invalid params type for init : {}'.format(self.step_dict))
             return None
+
+        self.init_mod = self.step_dict['params'][:]
 
         for axis in self.step_dict['params']:
             if axis in self.valid_motor_names:
@@ -376,6 +386,11 @@ class Behavior():
             pulse_Z.data = [self.z_id, self.pulse_z[self.z_id]]
             print("pulse_z{0}: {1}".format(self.z_id, self.pulse_z[self.z_id]))
             self.pub_pulse_z.publish(pulse_Z)
+
+    def global_disable(self, node):
+        print("Error coming from {0}, disabling BioBot".format(node))
+        self.global_enable.publish(False)
+        self.step_done.publish(False)
 
     def motor_kill_err(self, axis):
         self.motor_kill.publish(axis)
