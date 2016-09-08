@@ -49,6 +49,8 @@ class Behavior():
         self.new_pos_x = 0.0
         self.new_pos_y = 0.0
         self.new_pos_z = [0.0, 0.0, 0.0]
+        self.actual_vol_sp = 0
+        self.actual_vol_mp = 0
 
         self.pulse_x = 0
         self.pulse_y = 0
@@ -84,9 +86,19 @@ class Behavior():
         self.err_pulse_z = [0, 0, 0]
 
         # Upper axis limits
-        self.limit_x = 1005
+        self.limit_x = 1050 #Ajouter message d'erreur et etre constant avec planner
         self.limit_y = 585
         self.limit_z = [320, 360, 280]
+
+        # Volume limits
+        self.limit_vol_up_sp = 500
+        self.limit_vol_up_mp = 500
+        self.limit_vol_down_sp = 0
+        self.limit_vol_down_mp = 0
+
+        # Speed limits (HZ)
+        self.limit_spd_sp = 30000
+        self.limit_spd_mp = 30000
 
         # Others
         self.behavior_step = False
@@ -182,7 +194,7 @@ class Behavior():
         refresh = FloatList()
         refresh.data = [self.actual_pos_x, self.actual_pos_y, \
                         self.actual_pos_z[0], self.actual_pos_z[1], \
-                        self.actual_pos_z[2]]
+                        self.actual_pos_z[2], self.actual_vol_sp]
         self.refresh_pos.publish(refresh)
 
         # If step origins from Behavior, don't publish Step Done
@@ -256,8 +268,18 @@ class Behavior():
         elif self.step_dict['params']['name'] == 'manip':
             vol = self.step_dict['params']['args']['vol']
 
-            # print("volume : {}".format(vol))
-            #print('SP actual pos: {} '.format(self.actual_pos_sp))
+            print(vol)
+            print(self.limit_vol_up_sp)
+            print(self.limit_vol_up_sp)
+
+            self.actual_vol_sp = self.actual_vol_sp + vol
+
+            print(self.actual_vol_sp)
+
+            if self.actual_vol_sp > self.limit_vol_up_sp or self.actual_vol_sp < self.limit_vol_down_sp:
+                self.actual_vol_sp = self.actual_vol_sp - vol
+                print('vol limit')
+                return None
 
             # Linear empiric relations
             if abs(vol) < 10 :
@@ -286,7 +308,13 @@ class Behavior():
 
             freq_sp = int(round(self.step_dict['params']['args']['speed'] * \
                                                    abs(self.pulse_sp / vol)))
+            print(freq_sp)
+            print(self.limit_spd_sp)
 
+            if freq_sp < 0 or freq_sp > self.limit_spd_sp:
+                self.actual_vol_sp = self.actual_vol_sp - vol
+                print('speed limit')
+                return None
             # Publish number of pulse for simple pip
             pulse_SP = IntList()
             pulse_SP.data = [freq_sp, self.pulse_sp]
@@ -302,9 +330,6 @@ class Behavior():
 
         elif self.step_dict['params']['name'] == 'manip':
             vol = self.step_dict['params']['args']['vol']
-
-            # print("volume : {}".format(vol))
-            # print('actual pos ', self.actual_pos_mp)
 
             # Linear empiric relations
             if abs(vol) < 10 :
