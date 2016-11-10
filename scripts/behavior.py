@@ -88,7 +88,7 @@ class Behavior():
         # Upper axis limits
         self.limit_x = 1050 #Ajouter message d'erreur et etre constant avec planner
         self.limit_y = 585
-        self.limit_z = [320, 360, 280]
+        self.limit_z = [355, 365, 280]
 
         # Volume limits
         self.limit_vol_up_sp = 500
@@ -194,7 +194,8 @@ class Behavior():
         refresh = FloatList()
         refresh.data = [self.actual_pos_x, self.actual_pos_y, \
                         self.actual_pos_z[0], self.actual_pos_z[1], \
-                        self.actual_pos_z[2], self.actual_vol_sp]
+                        self.actual_pos_z[2], self.actual_vol_sp, \
+                        self.actual_vol_mp]
         self.refresh_pos.publish(refresh)
 
         # If step origins from Behavior, don't publish Step Done
@@ -267,17 +268,12 @@ class Behavior():
 
         elif self.step_dict['params']['name'] == 'manip':
             vol = self.step_dict['params']['args']['vol']
-
             print(vol)
-            print(self.limit_vol_up_sp)
-            print(self.limit_vol_up_sp)
 
-            self.actual_vol_sp = self.actual_vol_sp + vol
-
-            print(self.actual_vol_sp)
+            self.actual_vol_sp += vol
 
             if self.actual_vol_sp > self.limit_vol_up_sp or self.actual_vol_sp < self.limit_vol_down_sp:
-                self.actual_vol_sp = self.actual_vol_sp - vol
+                self.actual_vol_sp -= vol
                 print('vol limit')
                 return None
 
@@ -330,6 +326,14 @@ class Behavior():
 
         elif self.step_dict['params']['name'] == 'manip':
             vol = self.step_dict['params']['args']['vol']
+            print(vol)
+
+            self.actual_vol_mp += vol
+
+            if self.actual_vol_mp > self.limit_vol_up_mp or self.actual_vol_mp < self.limit_vol_down_mp:
+                self.actual_vol_mp -= vol
+                print('vol limit')
+                return None
 
             # Linear empiric relations
             if abs(vol) < 10 :
@@ -359,7 +363,12 @@ class Behavior():
             freq_mp = int(round(self.step_dict['params']['args']['speed'] * \
                                                    abs(self.pulse_mp / vol)))
 
-            # Publish number of pulse for simple pip
+            if freq_mp < 0 or freq_mp > self.limit_spd_mp:
+                self.actual_vol_mp = self.actual_vol_mp - vol
+                print('speed limit')
+                return None
+
+            # Publish number of pulse for multiple pip
             pulse_mp = IntList()
             pulse_mp.data = [freq_mp, self.pulse_mp/4]  # TODO : Remove "/4"
             # print("pulse_mp : {}".format(pulse_mp.data))
@@ -476,19 +485,32 @@ class Behavior():
             self.done_module.append('MotorControlZ')
 
         # Publish number of pulse for all axis
-        if self.pulse_x != 0 or self.pulse_y != 0:
-            pulse_XY = IntList()
-            pulse_XY.data = [self.pulse_x, self.pulse_y]
-            # print("pulse_xy: {}".format(pulse_XY.data))
-            self.pub_pulse_xy.publish(pulse_XY)
+        # If tool is going down, start with XY, else start with Z
+        if self.pulse_z[self.z_id] > 0:
+            if self.pulse_x != 0 or self.pulse_y != 0:
+                pulse_XY = IntList()
+                pulse_XY.data = [self.pulse_x, self.pulse_y]
+                self.pub_pulse_xy.publish(pulse_XY)
 
-        if self.pulse_z != 0:
-            while 'MotorControlXY' in self.done_module:
-                self.rate.sleep()
-            pulse_Z = IntList()
-            pulse_Z.data = [self.z_id, self.pulse_z[self.z_id]]
-            # print("pulse_z{0}: {1}".format(self.z_id, self.pulse_z[self.z_id]))
-            self.pub_pulse_z.publish(pulse_Z)
+            if self.pulse_z[self.z_id] != 0:
+                while 'MotorControlXY' in self.done_module:
+                    self.rate.sleep()
+                pulse_Z = IntList()
+                pulse_Z.data = [self.z_id, self.pulse_z[self.z_id]]
+                self.pub_pulse_z.publish(pulse_Z)
+        else:
+            if self.pulse_z[self.z_id] != 0:
+                pulse_Z = IntList()
+                pulse_Z.data = [self.z_id, self.pulse_z[self.z_id]]
+                self.pub_pulse_z.publish(pulse_Z)
+
+            if self.pulse_x != 0 or self.pulse_y != 0:
+                while 'MotorControlZ' in self.done_module:
+                    self.rate.sleep()
+                pulse_XY = IntList()
+                pulse_XY.data = [self.pulse_x, self.pulse_y]
+                self.pub_pulse_xy.publish(pulse_XY)
+
 
     def global_disable(self, node):
         print("Error coming from {0}, disabling BioBot".format(node))
