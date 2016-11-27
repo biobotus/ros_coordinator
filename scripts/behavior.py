@@ -4,9 +4,12 @@
 import ast
 from biobot_ros_msgs.msg import FloatList, IntList
 from ErrorCode import error_code
+
+import time
 import numbers
+import math
 import rospy
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, Float64, String
 
 class Behavior():
     def __init__(self):
@@ -30,11 +33,12 @@ class Behavior():
         self.pub_pulse_z = rospy.Publisher('Pulse_Z', IntList, queue_size=10)
         self.pub_pulse_sp = rospy.Publisher('Pulse_SP', IntList, queue_size=10)
         self.pub_pulse_mp = rospy.Publisher('Pulse_MP', IntList, queue_size=10)
-        self.pub_gripper_pos = rospy.Publisher('Gripper_Pos', String, queue_size=10)
+        self.pub_gripper_grip = rospy.Publisher('Grip_Joints_Controller/command', Float64, queue_size=10)
+        self.pub_gripper_wrist = rospy.Publisher('Wrist_Joint_Controller/command', Float64, queue_size=10)
         self.step_done = rospy.Publisher('Step_Done', Bool, queue_size=10)
         self.refresh_pos = rospy.Publisher('Refresh_Pos', FloatList, queue_size=10)
         self.global_enable = rospy.Publisher('Global_Enable', Bool, queue_size=10)
-
+	self.pub_mapping_3d = rospy.Publisher('Do_Cartography', IntList, queue_size=10)
         #Robot position inits
         self.delta_x = 0.0
         self.delta_y = 0.0
@@ -45,6 +49,8 @@ class Behavior():
         self.actual_pos_z = [None, None, None]
         self.actual_pos_sp = 0.0
         self.actual_pos_mp = 0.0
+        self.actual_gripper_wrist_pos = 0.0
+        self.actual_gripper_opening = 0.0
 
         self.new_pos_x = 0.0
         self.new_pos_y = 0.0
@@ -88,7 +94,7 @@ class Behavior():
         # Upper axis limits
         self.limit_x = 1050 #Ajouter message d'erreur et etre constant avec planner
         self.limit_y = 585
-        self.limit_z = [355, 365, 280]
+        self.limit_z = [355, 365, 360]
 
         # Volume limits
         self.limit_vol_up_sp = 500
@@ -111,21 +117,18 @@ class Behavior():
 
     # Callback for new step
     def callback_new_step_abs(self, data):
-        while self.done_module:
-            self.rate.sleep()
-
         self.move_mode = 'abs'
         self.callback_new_step(data)
 
     # Callback for new step (special case for relative movements from web page)
     def callback_new_step_rel(self, data):
-        while self.done_module:
-            self.rate.sleep()
-
         self.move_mode = 'rel'
         self.callback_new_step(data)
 
     def callback_new_step(self, data):
+        while self.done_module:
+            self.rate.sleep()
+
         # Make sure Behavior knows where the platform is, else do an init
         if self.actual_pos_x is None or self.actual_pos_y is None \
                                       or None in self.actual_pos_z:
@@ -153,6 +156,7 @@ class Behavior():
             return None
 
     def callback_done_module(self, data):
+        print(self.done_module)
         print('done_module: {}'.format(data.data))
         if data.data not in self.done_module:
             print("Error : wrong done_module received: {}".format(data.data))
@@ -195,7 +199,8 @@ class Behavior():
         refresh.data = [self.actual_pos_x, self.actual_pos_y, \
                         self.actual_pos_z[0], self.actual_pos_z[1], \
                         self.actual_pos_z[2], self.actual_vol_sp, \
-                        self.actual_vol_mp]
+                        self.actual_vol_mp, self.actual_gripper_wrist_pos, \
+                        self.actual_gripper_opening]
         self.refresh_pos.publish(refresh)
 
         # If step origins from Behavior, don't publish Step Done
@@ -380,15 +385,96 @@ class Behavior():
         if self.step_dict['params']['name'] == 'pos':
             self.z_id = 2
             return self.send_pos()
-
+	o_pub = False
+	w_pub = False
+	
         if self.step_dict['params']['name'] == 'manip':
-            gripper = str(self.step_dict['params']['args'])
-            self.pub_gripper_pos.publish(gripper)
-            self.done_module.append('Gripper')
+            gripper = self.step_dict['params']['args']
+            if 'wrist' in gripper:
+                try:
+                    assert gripper['wrist'] <= 90
+                    assert gripper['wrist'] >= -90
+		    self.done_module.append('Wrist_Joint_Controller/command')
+                    self.actual_gripper_wrist_pos = gripper['wrist']
+		    w_pub =True		    
 
+                except (AssertionError):
+                    print('Invalid gripper wrist angle: {} degrees'.format(gripper['wrist']))
+                    return None
+
+            if 'opening' in gripper:
+                try:
+                    assert gripper['opening'] <= 100
+                    assert gripper['opening'] >= 0
+		    self.done_module.append('Grip_Joints_Controller/command')
+                    self.actual_gripper_opening = gripper['opening']
+		    o_pub = True
+
+                except (AssertionError):
+                    print('Invalid gripper opening : {}%'.format(gripper['opening']))
+                    return None
+
+            if 'speed' in gripper:
+                try:
+                    assert gripper['speed'] <= 100
+                    assert gripper['speed'] >= 0
+                    #self.actual_gripper_speed = gripper['speed']
+                    speed = gripper['speed'] / 100.0
+                    rospy.wait_for_service('/Wrist_Joint_Controller/set_speed',timeout=2)
+                    rospy.wait_for_service('/Grip_Joints_Controller/set_speed',timeout=2)
+                    wrist_spd_service = rospy.ServiceProxy('/Wrist_Joint_Controller/set_speed',SetSpeed)
+                    grip_spd_service = rospy.ServiceProxy('/Grip_Joints_Controller/set_speed',SetSpeed)
+                    try:
+                        resp1 = wrist_spd_service(speed)
+                        resp2 = grip_spd_service(speed)
+                        self.rate.sleep()
+                    except rospy.ServiceException as exc:
+                        rospy.logwarn("Service did not process request: " + str(exc))
+
+                except (AssertionError):
+                    print('Invalid gripper opening : {}%'.format(gripper['opening']))
+                    return None
+	    if w_pub:
+		self.pub_gripper_wrist.publish(math.radians(gripper['wrist'] + 150.0))
+
+	    if o_pub:
+		self.pub_gripper_grip.publish(1 - (gripper['opening'] / 100.0))
         else:
             print("Error with params name in dict: {}".format(e))
             return None
+
+
+    def send_3d_camera(self):
+        if self.step_dict['params']['name'] == 'pos':
+            self.z_id = 0
+            return self.send_pos()
+
+        if self.step_dict['params']['name'] == 'manip':
+            camera_3d = self.step_dict['params']['args']
+            if 'nx' in camera_3d:
+                try:
+		    assert camera_3d['nx'] >=0
+                    self.done_module.append('Camera3d')
+                    nx = camera_3d['nx']
+
+                except (AssertionError):
+                    print('Invalid camera position: {} '.format(camera_3d['nx']))
+                    return None
+
+            if 'ny' in camera_3d:
+                try:
+                    assert camera_3d['ny'] >=0
+                    self.done_module.append('Camera3d')
+                    ny = camera_3d['ny']
+
+                except (AssertionError):
+                    print('Invalid camera position: {} '.format(camera_3d['ny']))
+                    return None
+
+	self.pub_mapping_3d.publish([nx,ny])
+
+
+
 
     # Compute and publish the number of pulse for each axes
     def send_pos(self):
