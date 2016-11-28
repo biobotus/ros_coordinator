@@ -38,7 +38,7 @@ class Behavior():
         self.step_done = rospy.Publisher('Step_Done', Bool, queue_size=10)
         self.refresh_pos = rospy.Publisher('Refresh_Pos', FloatList, queue_size=10)
         self.global_enable = rospy.Publisher('Global_Enable', Bool, queue_size=10)
-	self.pub_mapping_3d = rospy.Publisher('Do_Cartography', IntList, queue_size=10)
+        self.pub_mapping_3d = rospy.Publisher('Do_Cartography', IntList, queue_size=10)
         #Robot position inits
         self.delta_x = 0.0
         self.delta_y = 0.0
@@ -92,7 +92,7 @@ class Behavior():
         self.err_pulse_z = [0, 0, 0]
 
         # Upper axis limits
-        self.limit_x = 1050 #Ajouter message d'erreur et etre constant avec planner
+        self.limit_x = 1000 #Ajouter message d'erreur et etre constant avec planner
         self.limit_y = 585
         self.limit_z = [355, 365, 360]
 
@@ -385,18 +385,18 @@ class Behavior():
         if self.step_dict['params']['name'] == 'pos':
             self.z_id = 2
             return self.send_pos()
-	o_pub = False
-	w_pub = False
-	
+        o_pub = False
+        w_pub = False
+
         if self.step_dict['params']['name'] == 'manip':
             gripper = self.step_dict['params']['args']
             if 'wrist' in gripper:
                 try:
                     assert gripper['wrist'] <= 90
                     assert gripper['wrist'] >= -90
-		    self.done_module.append('Wrist_Joint_Controller/command')
+                    self.done_module.append('Wrist_Joint_Controller/command')
                     self.actual_gripper_wrist_pos = gripper['wrist']
-		    w_pub =True		    
+                    w_pub =True
 
                 except (AssertionError):
                     print('Invalid gripper wrist angle: {} degrees'.format(gripper['wrist']))
@@ -406,9 +406,9 @@ class Behavior():
                 try:
                     assert gripper['opening'] <= 100
                     assert gripper['opening'] >= 0
-		    self.done_module.append('Grip_Joints_Controller/command')
+                    self.done_module.append('Grip_Joints_Controller/command')
                     self.actual_gripper_opening = gripper['opening']
-		    o_pub = True
+                    o_pub = True
 
                 except (AssertionError):
                     print('Invalid gripper opening : {}%'.format(gripper['opening']))
@@ -434,15 +434,14 @@ class Behavior():
                 except (AssertionError):
                     print('Invalid gripper opening : {}%'.format(gripper['opening']))
                     return None
-	    if w_pub:
-		self.pub_gripper_wrist.publish(math.radians(gripper['wrist'] + 150.0))
+            if w_pub:
+                self.pub_gripper_wrist.publish(math.radians(gripper['wrist'] + 150.0))
 
-	    if o_pub:
-		self.pub_gripper_grip.publish(1 - (gripper['opening'] / 100.0))
+            if o_pub:
+                self.pub_gripper_grip.publish(1 - (gripper['opening'] / 100.0))
         else:
             print("Error with params name in dict: {}".format(e))
             return None
-
 
     def send_3d_camera(self):
         if self.step_dict['params']['name'] == 'pos':
@@ -453,9 +452,7 @@ class Behavior():
             camera_3d = self.step_dict['params']['args']
             if 'nx' in camera_3d:
                 try:
-		    assert camera_3d['nx'] >=0
-                    self.done_module.append('Camera3d')
-                    nx = camera_3d['nx']
+                    assert camera_3d['nx'] >=0
 
                 except (AssertionError):
                     print('Invalid camera position: {} '.format(camera_3d['nx']))
@@ -464,17 +461,13 @@ class Behavior():
             if 'ny' in camera_3d:
                 try:
                     assert camera_3d['ny'] >=0
-                    self.done_module.append('Camera3d')
-                    ny = camera_3d['ny']
 
                 except (AssertionError):
                     print('Invalid camera position: {} '.format(camera_3d['ny']))
                     return None
 
-	self.pub_mapping_3d.publish([nx,ny])
-
-
-
+        self.done_module.append('Camera3d')
+        self.pub_mapping_3d.publish([camera_3d['nx'], camera_3d['ny']])
 
     # Compute and publish the number of pulse for each axes
     def send_pos(self):
