@@ -11,7 +11,7 @@ import math
 import rospy
 from std_msgs.msg import Bool, Float64, String
 
-class Behavior():
+class Coordinator():
     def __init__(self):
         # ROS init
         self.node_name = self.__class__.__name__
@@ -107,7 +107,7 @@ class Behavior():
         self.limit_spd_mp = 30000
 
         # Others
-        self.behavior_step = False
+        self.coordinator_step = False
         self.step_dict = {}
         self.done_module = []
         self.z_id = -1
@@ -129,13 +129,13 @@ class Behavior():
         while self.done_module:
             self.rate.sleep()
 
-        # Make sure Behavior knows where the platform is, else do an init
+        # Make sure Coordinator knows where the platform is, else do an init
         if self.actual_pos_x is None or self.actual_pos_y is None \
                                       or None in self.actual_pos_z:
             self.step_dict = {"module_type": "init", "params": \
                              ['MotorControlXY', 'MotorControlZ']}
             actual_pos = False
-            self.behavior_step = True
+            self.coordinator_step = True
 
             self.send_init()
 
@@ -203,9 +203,9 @@ class Behavior():
                         self.actual_gripper_opening]
         self.refresh_pos.publish(refresh)
 
-        # If step origins from Behavior, don't publish Step Done
-        if self.behavior_step:
-            self.behavior_step = False
+        # If step origins from Coordinator, don't publish Step Done
+        if self.coordinator_step:
+            self.coordinator_step = False
         else:
             print("Publishing step done")
             self.step_done.publish(True)
@@ -609,8 +609,8 @@ class Behavior():
 if __name__ == '__main__':
 
     try:
-        bh = Behavior()
-        bh.listener()
+        co = Coordinator()
+        co.listener()
 
     except rospy.ROSInterruptException as e:
         print(e)

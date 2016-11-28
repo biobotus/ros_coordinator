@@ -1,8 +1,0 @@
-prefix=/home/ubuntu/biobot_ros_jtk/install
-
-Name: ros_behavior
-Description: Description of ros_behavior
-Version: 0.0.0
-Cflags: 
-Libs: -L/home/ubuntu/biobot_ros_jtk/install/lib 
-Requires: 

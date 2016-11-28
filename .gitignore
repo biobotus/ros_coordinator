@@ -11,3 +11,7 @@
 # OS generated files
 .DS_STORE
 .catkin_workspace
+CMakeFiles/*
+catkin_generated/*
+cmake/*
+*.cmake

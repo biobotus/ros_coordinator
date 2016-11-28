@@ -1,7 +1,7 @@
-# ros_behavior
+# ros_coordinator
 
-Behavior is management ROS node used to link the planner
-to platform_control's nodes. Behavior is the manager of the
+Coordinator is management ROS node used to link the planner
+to platform_control's nodes. Coordinator is the manager of the
 cells in general, it translate and divide planner's tasks 
 to the right platform_control's node for a specific task.
 
@@ -13,27 +13,27 @@ It received these ROS topics:
     -Error, received from all plaform_control's nodes
 
 The information reveived from planner is a python dictionnary
-ROS topics that behavior manage and redistribute the informations
+ROS topics that coordinator manage and redistribute the informations
 to the right platform_control nodes. The dictionnary is that form:
 
 "{"module_type": "pipette_s", "params": {"name": "pos", "args":
 {"x": float(mm), "y": float(mm), "z": float(mm)}}}"
 
 If the name is pos like in this example the position in the
-dictionnary are translate in number of pulse by behavior and
+dictionnary are translate in number of pulse by coordinator and
 sended to the right platform_control nodes. If the name is
-manip, behavior threat the args and translate the dictionnary
+manip, coordinator threat the args and translate the dictionnary
 information in function of the module.
 
-Done_Module is the ROS topics that indicate to behavior when
+Done_Module is the ROS topics that indicate to coordinator when
 a platform_control node has finish his task.
 
-Error is a string ROS topics that behavior received and threat
+Error is a string ROS topics that coordinator received and threat
 in function of the error code. It can bring to a platform
 initialization or to a total stop of the entire cells for
 example.
 
-Behavior publish these topics :
+Coordinator publish these topics :
     -Motor_Kill
     -Platform_Init
     -Pulse_XY
