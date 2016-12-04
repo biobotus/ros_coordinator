@@ -2,8 +2,9 @@
 
 # imports
 import ast
-from biobot_ros_msgs.msg import FloatList, IntList
+from biobot_ros_msgs.msg import BCAMsg, FloatList, IntList
 from ErrorCode import error_code
+import pymongo
 
 import time
 import numbers
@@ -25,6 +26,7 @@ class Coordinator():
                                            self.callback_new_step_rel)
         self.subscriber = rospy.Subscriber('Error', String, self.callback_error)
         self.subscriber = rospy.Subscriber('Done_Module', String, self.callback_done_module)
+        self.subscriber = rospy.Subscriber('Tac1_To_Biobot', String, self.callback_done_module)
 
         # ROS publishments
         self.motor_kill = rospy.Publisher('Motor_Kill', String, queue_size=10)
@@ -39,7 +41,12 @@ class Coordinator():
         self.refresh_pos = rospy.Publisher('Refresh_Pos', FloatList, queue_size=10)
         self.global_enable = rospy.Publisher('Global_Enable', Bool, queue_size=10)
         self.pub_mapping_3d = rospy.Publisher('Do_Cartography', IntList, queue_size=10)
-        #Robot position inits
+        self.pub_tac_1 = rospy.Publisher('Biobot_To_Tac1', String, queue_size=10)
+        self.pub_bca = rospy.Publisher('BC_Analysis', BCAMsg, queue_size=10)
+
+        self.client = pymongo.MongoClient()
+
+        # Robot position initialization
         self.delta_x = 0.0
         self.delta_y = 0.0
         self.delta_z = [0.0, 0.0, 0.0]
@@ -65,7 +72,6 @@ class Coordinator():
         self.pulse_mp = 0
 
         # Constants
-
         self.dist_step_xy = 0.127
         self.mode_step_xy = 0.25  # 4 pulses per step
         self.pulse_cst_xy = self.dist_step_xy * self.mode_step_xy
@@ -92,7 +98,7 @@ class Coordinator():
         self.err_pulse_z = [0, 0, 0]
 
         # Upper axis limits
-        self.limit_x = 1000 #Ajouter message d'erreur et etre constant avec planner
+        self.limit_x = 1000  # Add error message to match Planner
         self.limit_y = 585
         self.limit_z = [355, 365, 360]
 
@@ -102,7 +108,7 @@ class Coordinator():
         self.limit_vol_down_sp = 0
         self.limit_vol_down_mp = 0
 
-        # Speed limits (HZ)
+        # Speed limits (Hz)
         self.limit_spd_sp = 30000
         self.limit_spd_mp = 30000
 
@@ -114,6 +120,14 @@ class Coordinator():
         self.valid_motor_names = ['MotorControlXY', 'MotorControlZ']
         self.move_mode = 'abs'
         self.init_mod = []
+        self.protocol = None
+        self.step = 0
+        self.pick_num = 0
+        self.x_var = 0
+        self.y_var = 0
+        self.indice = 0
+        self.pos_var = 0
+        self.tour = 0
 
     # Callback for new step
     def callback_new_step_abs(self, data):
@@ -128,7 +142,6 @@ class Coordinator():
     def callback_new_step(self, data):
         while self.done_module:
             self.rate.sleep()
-
         # Make sure Coordinator knows where the platform is, else do an init
         if self.actual_pos_x is None or self.actual_pos_y is None \
                                       or None in self.actual_pos_z:
@@ -229,7 +242,7 @@ class Coordinator():
             print("Error : {}".format(e))
             return None
 
-    # send platform_init
+    # Send platform_init
     def send_init(self):
         try:
             assert type(self.step_dict['params']) == list
@@ -270,6 +283,10 @@ class Coordinator():
         if self.step_dict['params']['name'] == 'pos':
             self.z_id = 0
             return self.send_pos()
+
+        elif self.step_dict['params']['name'] == 'pos_var':
+            self.z_id = 0
+            return self.send_pos_var()
 
         elif self.step_dict['params']['name'] == 'manip':
             vol = self.step_dict['params']['args']['vol']
@@ -316,6 +333,7 @@ class Coordinator():
                 self.actual_vol_sp = self.actual_vol_sp - vol
                 print('speed limit')
                 return None
+
             # Publish number of pulse for simple pip
             pulse_SP = IntList()
             pulse_SP.data = [freq_sp, self.pulse_sp]
@@ -428,12 +446,13 @@ class Coordinator():
                         resp1 = wrist_spd_service(speed)
                         resp2 = grip_spd_service(speed)
                         self.rate.sleep()
-                    except rospy.ServiceException as exc:
-                        rospy.logwarn("Service did not process request: " + str(exc))
+                    except rospy.ServiceException as e:
+                        rospy.logwarn("Service did not process request: {}".format(e))
 
                 except (AssertionError):
                     print('Invalid gripper opening : {}%'.format(gripper['opening']))
                     return None
+
             if w_pub:
                 self.pub_gripper_wrist.publish(math.radians(gripper['wrist'] + 150.0))
 
@@ -469,6 +488,64 @@ class Coordinator():
         self.done_module.append('Camera3d')
         self.pub_mapping_3d.publish([camera_3d['nx'], camera_3d['ny']])
 
+    def send_2d_camera(self):
+        # Colony selection parameters
+        self.perimeter_min = 0
+        self.perimeter_max = 0
+        self.excentricity_min = 0
+        self.excentricity_max = 0
+        self.area_min = 0
+        self.area_max = 0
+        self.number_of_colony_d = 0
+        self.picking = 0
+        self.protocol =  0
+        self.step = 0
+        self.pick_number = 0
+
+        var = self.step_dict['params']['args']
+
+        msg = BCAMsg()
+
+        msg.perimeter_min = var['perimeter_min']
+        msg.perimeter_max = var['perimeter_max']
+        msg.excentricity_min = var['excentricity_min']
+        msg.excentricity_max = var['excentricity_max']
+        msg.area_min = var['area_min']
+        msg.area_max = var['area_max']
+        msg.number_of_colony = var['number_of_colony_d']
+        msg.picking = var['picking']
+        msg.protocol = var['protocol']
+        msg.step = var['step']
+        msg.pick_number = var['picking_number']
+        msg.color = var['color']
+
+        self.protocol = var['protocol']
+        self.pick_number = var['picking_number']
+        self.step = var['step']
+
+        self.done_module.append('BC_Analysis')
+        self.pub_bca.publish(msg)
+
+    def send_pos_var(self):
+        self.pos_var = 1
+
+        db = self.client[self.protocol]
+        pick_num = "picking_{}".format(self.pick_number)
+        colonies_to_pick = list(db.colonies.find({'step': self.step, 'operation': pick_num, 'selected': 1}))
+
+        if self.tour == 3:
+            self.indice = self.indice + 1
+            self.tour = 0
+
+        if self.indice < len(colonies_to_pick):
+            self.x_var, self.y_var = colonies_to_pick[self.indice]['y'], colonies_to_pick[self.indice]['x']
+        else:
+            self.indice = 0
+
+        self.tour = self.tour + 1
+
+        return self.send_pos()
+
     # Compute and publish the number of pulse for each axes
     def send_pos(self):
         try:
@@ -480,9 +557,15 @@ class Coordinator():
             print("Error : wrong argument type {}".format(e))
             return None
 
-        self.new_pos_x = self.step_dict['params']['args']['x']
-        self.new_pos_y = self.step_dict['params']['args']['y']
-        self.new_pos_z[self.z_id] = self.step_dict['params']['args']['z']
+        if self.pos_var == 1:
+            self.new_pos_x = self.step_dict['params']['args']['x'] + self.x_var
+            self.new_pos_y = self.step_dict['params']['args']['y'] + self.y_var
+            self.new_pos_z[self.z_id] = self.step_dict['params']['args']['z']
+            self.pos_var = 0
+        else:
+            self.new_pos_x = self.step_dict['params']['args']['x']
+            self.new_pos_y = self.step_dict['params']['args']['y']
+            self.new_pos_z[self.z_id] = self.step_dict['params']['args']['z']
 
         if self.move_mode == 'abs':
             self.delta_x = self.new_pos_x - self.actual_pos_x
@@ -607,7 +690,6 @@ class Coordinator():
 
 # Main function
 if __name__ == '__main__':
-
     try:
         co = Coordinator()
         co.listener()
