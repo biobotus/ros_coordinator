@@ -1,0 +1,73 @@
+Help on module coordinator:
+
+NAME
+    coordinator - # imports
+
+FILE
+    /home/ubuntu/biobot_ros_jtk/src/ros_coordinator/scripts/coordinator.py
+
+CLASSES
+    Coordinator
+    
+    class Coordinator
+     |  Methods defined here:
+     |  
+     |  __init__(self)
+     |  
+     |  callback_done_module(self, data)
+     |      Receive and coordinate module with Done_module
+     |  
+     |  callback_error(self, data)
+     |      Error function
+     |  
+     |  callback_new_step(self, data)
+     |      New step from planner
+     |  
+     |  callback_new_step_abs(self, data)
+     |      Absolute step from web
+     |  
+     |  callback_new_step_rel(self, data)
+     |      Relative step from web
+     |  
+     |  end_of_done_module(self)
+     |      Send a Done_Step to planner when all modules have finished their steps
+     |  
+     |  global_disable(self, node)
+     |      Golbal motors disable
+     |  
+     |  listener(self)
+     |  
+     |  motor_kill_err(self, axis)
+     |      Motor kill
+     |  
+     |  platform_init_err(self, axis)
+     |  
+     |  send_2d_camera(self)
+     |      Send the steps for the 2D camera
+     |  
+     |  send_3d_camera(self)
+     |      Send the steps for the 3D camera
+     |  
+     |  send_gripper(self)
+     |      Send the steps for the gripper
+     |  
+     |  send_init(self)
+     |      Function used to initialise the platform
+     |      An initialisation is done if coordinator doesnt know his position
+     |  
+     |  send_pipette_m(self)
+     |      Send the steps for the multi pipette
+     |  
+     |  send_pipette_s(self)
+     |      Send the steps for the single pipette
+     |  
+     |  send_pos(self)
+     |      Send the steps for a tool movement
+     |  
+     |  send_pos_var(self)
+     |      Send the steps for a variable tool movement
+
+DATA
+    error_code = {'Hw0': 'global_disable', 'Hw1': 'motor_kill_err', 'Hw2':...
+
+

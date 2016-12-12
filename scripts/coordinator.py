@@ -43,6 +43,7 @@ class Coordinator():
         self.pub_mapping_3d = rospy.Publisher('Do_Cartography', IntList, queue_size=10)
         self.pub_tac_1 = rospy.Publisher('Biobot_To_Tac1', String, queue_size=10)
         self.pub_bca = rospy.Publisher('BC_Analysis', BCAMsg, queue_size=10)
+        self.pub_backlight = rospy.Publisher('Backlight_Color', String, queue_size=10)
 
         self.client = pymongo.MongoClient()
 
@@ -128,18 +129,28 @@ class Coordinator():
         self.indice = 0
         self.pos_var = 0
         self.tour = 0
+        self.old_data = None
 
     # Callback for new step
     def callback_new_step_abs(self, data):
+        """
+        Absolute step from web
+        """
         self.move_mode = 'abs'
         self.callback_new_step(data)
 
     # Callback for new step (special case for relative movements from web page)
     def callback_new_step_rel(self, data):
+        """
+        Relative step from web
+        """
         self.move_mode = 'rel'
         self.callback_new_step(data)
 
     def callback_new_step(self, data):
+        """
+        New step from planner
+        """
         while self.done_module:
             self.rate.sleep()
         # Make sure Coordinator knows where the platform is, else do an init
@@ -169,6 +180,9 @@ class Coordinator():
             return None
 
     def callback_done_module(self, data):
+        """
+        Receive and coordinate module with Done_module
+        """
         print(self.done_module)
         print('done_module: {}'.format(data.data))
         if data.data not in self.done_module:
@@ -207,6 +221,9 @@ class Coordinator():
             self.end_of_done_module()
 
     def end_of_done_module(self):
+        """
+        Send a Done_Step to planner when all modules have finished their steps
+        """
         # Publish actual position for web interface
         refresh = FloatList()
         refresh.data = [self.actual_pos_x, self.actual_pos_y, \
@@ -225,6 +242,10 @@ class Coordinator():
 
     # Error management
     def callback_error(self, data):
+        """
+        Error function
+        """
+
         self.actual_pos_x = None
         self.actual_pos_y = None
         self.actual_pos_z = [None, None, None]
@@ -244,6 +265,11 @@ class Coordinator():
 
     # Send platform_init
     def send_init(self):
+        """
+        Function used to initialise the platform
+        An initialisation is done if coordinator doesnt know his position
+        """
+
         try:
             assert type(self.step_dict['params']) == list
 
@@ -280,6 +306,9 @@ class Coordinator():
 
     # Publish pipette_s topics in function of self.step_dict args
     def send_pipette_s(self):
+        """
+        Send the steps for the single pipette
+        """
         if self.step_dict['params']['name'] == 'pos':
             self.z_id = 0
             return self.send_pos()
@@ -343,6 +372,9 @@ class Coordinator():
 
     # Publish pipette_mp topics in function of self.step_dict args
     def send_pipette_m(self):
+        """
+        Send the steps for the multi pipette
+        """
         if self.step_dict['params']['name'] == 'pos':
             self.z_id = 1
             return self.send_pos()
@@ -400,6 +432,9 @@ class Coordinator():
 
     # Publish gripper topics in function of self.step_dict args
     def send_gripper(self):
+        """
+        Send the steps for the gripper
+        """
         if self.step_dict['params']['name'] == 'pos':
             self.z_id = 2
             return self.send_pos()
@@ -414,6 +449,7 @@ class Coordinator():
                     assert gripper['wrist'] >= -90
                     self.done_module.append('Wrist_Joint_Controller/command')
                     self.actual_gripper_wrist_pos = gripper['wrist']
+                    self.pub_gripper_wrist.publish(math.radians(gripper['wrist'] + 150.0))
                     w_pub =True
 
                 except (AssertionError):
@@ -421,11 +457,15 @@ class Coordinator():
                     return None
 
             if 'opening' in gripper:
+                if gripper['opening'] != 0:
+                    while 'Wrist_Joint_Controller/command' in self.done_module:
+                        self.rate.sleep()
                 try:
                     assert gripper['opening'] <= 100
                     assert gripper['opening'] >= 0
                     self.done_module.append('Grip_Joints_Controller/command')
                     self.actual_gripper_opening = gripper['opening']
+                    self.pub_gripper_grip.publish(1 - (gripper['opening'] / 100.0))
                     o_pub = True
 
                 except (AssertionError):
@@ -453,16 +493,19 @@ class Coordinator():
                     print('Invalid gripper opening : {}%'.format(gripper['opening']))
                     return None
 
-            if w_pub:
-                self.pub_gripper_wrist.publish(math.radians(gripper['wrist'] + 150.0))
+            #if w_pub:
+                #self.pub_gripper_wrist.publish(math.radians(gripper['wrist'] + 150.0))
 
-            if o_pub:
-                self.pub_gripper_grip.publish(1 - (gripper['opening'] / 100.0))
+            #if o_pub:
+                #self.pub_gripper_grip.publish(1 - (gripper['opening'] / 100.0))
         else:
             print("Error with params name in dict: {}".format(e))
             return None
 
     def send_3d_camera(self):
+        """
+        Send the steps for the 3D camera
+        """
         if self.step_dict['params']['name'] == 'pos':
             self.z_id = 0
             return self.send_pos()
@@ -489,6 +532,9 @@ class Coordinator():
         self.pub_mapping_3d.publish([camera_3d['nx'], camera_3d['ny']])
 
     def send_2d_camera(self):
+        """
+        Send the steps for the 2D camera
+        """
         # Colony selection parameters
         self.perimeter_min = 0
         self.perimeter_max = 0
@@ -519,14 +565,25 @@ class Coordinator():
         msg.pick_number = var['picking_number']
         msg.color = var['color']
 
+
         self.protocol = var['protocol']
         self.pick_number = var['picking_number']
         self.step = var['step']
 
-        self.done_module.append('BC_Analysis')
-        self.pub_bca.publish(msg)
+        self.done_module.append('Backlight')
+
+        if self.step_dict['params']['args']['backlight_color'] == 'white' or self.step_dict['params']['args']['backlight_color'] == 'blue':
+            self.done_module.append('BC_Analysis')
+            self.pub_bca.publish(msg)
+
+        self.pub_backlight.publish(self.step_dict['params']['args']['backlight_color'])
+
+
 
     def send_pos_var(self):
+        """
+        Send the steps for a variable tool movement
+        """
         self.pos_var = 1
 
         db = self.client[self.protocol]
@@ -548,6 +605,9 @@ class Coordinator():
 
     # Compute and publish the number of pulse for each axes
     def send_pos(self):
+        """
+        Send the steps for a tool movement
+        """
         try:
             assert isinstance(self.step_dict['params']['args']['x'], numbers.Real)
             assert isinstance(self.step_dict['params']['args']['y'], numbers.Real)
@@ -572,6 +632,9 @@ class Coordinator():
             self.delta_y = self.new_pos_y - self.actual_pos_y
             self.delta_z[self.z_id] = self.new_pos_z[self.z_id] - \
                                       self.actual_pos_z[self.z_id]
+            if self.delta_x == 0 and self.delta_y == 0 and self.delta_z[self.z_id] == 0 :
+                self.step_done.publish(True)
+                return None
 
             if self.new_pos_x > self.limit_x or self.new_pos_x < 0:
                 # Add warning for pos
@@ -606,6 +669,7 @@ class Coordinator():
         else:
             print("Invalid move mode: {0}".format(self.move_mode))
             return None
+
 
         pulse_temp_x = self.delta_x / self.pulse_cst_xy
         pulse_temp_y = self.delta_y / self.pulse_cst_xy
@@ -675,11 +739,17 @@ class Coordinator():
 
 
     def global_disable(self, node):
+        """
+        Golbal motors disable
+        """
         print("Error coming from {0}, disabling BioBot".format(node))
         self.global_enable.publish(False)
         self.step_done.publish(False)
 
     def motor_kill_err(self, axis):
+        """
+        Motor kill
+        """
         self.motor_kill.publish(axis)
 
     def platform_init_err(self, axis):
